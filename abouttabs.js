@@ -7,6 +7,9 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "pktApi",
+                                  "chrome://pocket/content/pktApi.jsm");
 
 var Tab = function (tab) {
   this.favicon = tab.image;
@@ -25,6 +28,25 @@ Tab.prototype = {
     if (refresh !== false) {
       window.refresh();
     }
+  },
+
+  saveAndClose: function (options) {
+    if (!options) {
+      var self = this;
+      options = {
+        success(data, request) {
+          self.obj.ownerGlobal.gBrowser.removeTab(self.obj);
+          delete self.obj;
+          if (refresh !== false) {
+            window.refresh();
+          }
+        },
+        error(error, request) {
+          console.log("Error saving to Pocket", error, request);
+        }
+      };
+    }
+    pktApi.addLink(this.obj.linkedBrowser.currentURI.spec, options);
   },
 
   switchTo: function () {
@@ -49,6 +71,30 @@ var _TabListMethods = {
         continue;
       }
       tab.close(false);
+    }
+    refresh();
+  }},
+
+  saveAndClose: { value: function () {
+    var pending = 0;
+    function onResponse() {
+      if (--pending === 0)
+        refresh();
+    }
+    var options = {
+      success(data, request) {
+        this.obj.ownerGlobal.gBrowser.removeTab(this.obj);
+        delete this.obj;
+        onResponse();
+      },
+      error(error, request) {
+        window.console.log("Error saving to Pocket", error, request);
+        onResponse();
+      }
+    };
+    for (var tab of this) {
+      tab.saveAndClose({success: options.success.bind(tab), error: options.error.bind(tab)});
+      pending++;
     }
     refresh();
   }},
